@@ -63,9 +63,17 @@ export const Pull: FunctionalComponent<Props> = ({ lang }) => {
     }
   }
 
+  const selectionKey = useMemo(
+    () =>
+      (selectedNodes.data?.items || [])
+        .map((n) => `${n.id}:${n.key}:${n.ns || ""}`)
+        .join("|"),
+    [selectedNodes.data?.items]
+  );
+
   useEffect(() => {
     computeDiff();
-  }, [selectedNodes.data, lang]);
+  }, [selectionKey, lang]);
 
   const formatter = useMemo(() => createFormatIcu(), [lang]);
 
