@@ -1,5 +1,5 @@
 import { h } from "preact";
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useDebounce } from "use-debounce";
 import { NodeInfo } from "@/types";
 import { NodeRow } from "@/ui/components/NodeList/NodeRow";
@@ -54,7 +54,9 @@ export const ListItem = ({
   const defaultNamespace = useGlobalState((c) => c.config?.namespace);
   const [namespace, setNamespace] = useState(node.ns ?? defaultNamespace);
 
-  const setNodesDataMutation = useSetNodesDataMutation();
+  const setNodesDataMutation = useSetNodesDataMutation({
+    invalidateConnectedNodes: false,
+  });
 
   const { setRoute } = useGlobalActions();
 
@@ -72,9 +74,11 @@ export const ListItem = ({
   }, [node.connected, node.key, node.ns, defaultNamespace]);
 
   // Debounced mutation: only update Figma nodes after user stops typing
+  // and skip pluginData writes while the input is focused to avoid UI lag.
+  const isKeyInputFocusedRef = useRef(false);
   useEffect(() => {
     const hasConnected = effectiveNodes.some((current) => current.connected);
-    if (hasConnected) {
+    if (hasConnected || isKeyInputFocusedRef.current) {
       return;
     }
     const shouldUpdate = effectiveNodes.some(
@@ -110,9 +114,33 @@ export const ListItem = ({
     setKeyName(value);
   };
 
-  useEffect(() => {
+  const handleKeyBlur = () => {
+    isKeyInputFocusedRef.current = false;
     const hasConnected = effectiveNodes.some((current) => current.connected);
     if (hasConnected || !keyName) {
+      return;
+    }
+    const shouldUpdate = effectiveNodes.some(
+      (current) => keyName !== (current.key || "")
+    );
+    if (shouldUpdate) {
+      setNodesDataMutation.mutate({
+        nodes: effectiveNodes.map((current) => ({
+          ...current,
+          key: keyName,
+          ns: namespace,
+        })),
+      });
+    }
+  };
+
+  const handleKeyFocus = () => {
+    isKeyInputFocusedRef.current = true;
+  };
+
+  useEffect(() => {
+    const hasConnected = effectiveNodes.some((current) => current.connected);
+    if (hasConnected || !keyName || isKeyInputFocusedRef.current) {
       return;
     }
     const shouldUpdate = effectiveNodes.some(
@@ -150,7 +178,12 @@ export const ListItem = ({
       duplicatesCount={duplicatesCount}
       keyComponent={
         !node.connected && (
-          <KeyInput value={keyName || ""} onChange={handleKeyChange()} />
+          <KeyInput
+            value={keyName || ""}
+            onChange={handleKeyChange()}
+            onFocus={handleKeyFocus}
+            onBlur={handleKeyBlur}
+          />
         )
       }
       nsComponent={
